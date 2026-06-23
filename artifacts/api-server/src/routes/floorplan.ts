@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 import { GenerateFloorPlanBody } from "@workspace/api-zod";
 
 const router = Router();
 
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "" });
 
 const ROOM_COLORS: Record<string, string> = {
   "living room": "#E8D5B7",
@@ -73,11 +73,13 @@ Return ONLY a raw JSON object (no markdown, no \`\`\`json, no explanation):
 }`;
 
   try {
-    const result = await genAI.models.generateContent({
-      model: "gemini-2.0-flash-lite",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.3,
     });
-    const content = result.text ?? "";
+
+    const content = completion.choices[0]?.message?.content ?? "";
 
     let parsedResult: any;
     try {
@@ -110,7 +112,7 @@ Return ONLY a raw JSON object (no markdown, no \`\`\`json, no explanation):
       vastuNotes: parsedResult.vastuNotes || null,
     });
   } catch (error: any) {
-    console.error("Gemini error:", error);
+    console.error("Groq error:", error);
     return res.status(500).json({ error: error.message || "Failed to generate floor plan" });
   }
 });
