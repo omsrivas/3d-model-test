@@ -447,19 +447,39 @@ export function FloorPlan3D({ result }: FloorPlan3DProps) {
     const onMouseUp = () => { isDragging = false; };
     const onWheel = (e: WheelEvent) => { radius = Math.max(10, Math.min(500, radius + e.deltaY * 0.25)); updateCamera(); };
 
-    // Touch
+    // Touch — rotate (1 finger) + pinch zoom (2 fingers)
+    let lastPinchDist = 0;
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 1) { isDragging = true; prevPos = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }
+      if (e.touches.length === 1) {
+        isDragging = true;
+        prevPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        lastPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      }
     };
     const onTouchMove = (e: TouchEvent) => {
       e.preventDefault();
-      if (!isDragging || e.touches.length !== 1) return;
-      theta -= (e.touches[0].clientX - prevPos.x) * 0.005;
-      phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, phi + (e.touches[0].clientY - prevPos.y) * 0.005));
-      prevPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      updateCamera();
+      if (e.touches.length === 1 && isDragging) {
+        theta -= (e.touches[0].clientX - prevPos.x) * 0.005;
+        phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, phi + (e.touches[0].clientY - prevPos.y) * 0.005));
+        prevPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        updateCamera();
+      } else if (e.touches.length === 2) {
+        const pinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const delta = lastPinchDist - pinchDist;
+        radius = Math.max(10, Math.min(500, radius + delta * 0.5));
+        lastPinchDist = pinchDist;
+        updateCamera();
+      }
     };
-    const onTouchEnd = () => { isDragging = false; };
+    const onTouchEnd = () => { isDragging = false; lastPinchDist = 0; };
 
     mount.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mousemove", onMouseMove);

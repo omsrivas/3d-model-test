@@ -39,9 +39,13 @@ router.post("/floorplan/generate", async (req, res) => {
 
   const input = parsed.data;
 
-  const prompt = `You are an expert Indian architect. Generate a practical floor plan for a house.
+  const usableW = input.plotWidth - 2;
+  const usableL = input.plotLength - 2;
+  const totalArea = usableW * usableL;
 
-Plot Size: ${input.plotWidth} x ${input.plotLength} feet
+  const prompt = `You are an expert Indian architect. Generate an OPTIMIZED floor plan that uses MAXIMUM available plot area.
+
+Plot Size: ${input.plotWidth} x ${input.plotLength} feet (usable area: ${usableW} x ${usableL} = ${totalArea} sq ft)
 Floors: ${input.floors}
 Plot Facing: ${input.facing}
 Bedrooms: ${input.bedrooms}
@@ -53,22 +57,29 @@ Study Room: ${input.hasStudyRoom ? "Yes" : "No"}
 Vastu Compliant: ${input.vastuCompliant ? "Yes" : "No"}
 ${input.additionalNotes ? `Notes: ${input.additionalNotes}` : ""}
 
-STRICT RULES:
-- All room x, y, width, length values must be numbers (not strings)
-- x + width must NOT exceed ${input.plotWidth}
-- y + length must NOT exceed ${input.plotLength}
-- Rooms must not overlap
-- Leave 1 foot margin on edges (so x >= 1, y >= 1, x+width <= ${input.plotWidth - 1}, y+length <= ${input.plotLength - 1})
-- For multiple floors, use floor: 0 for ground, 1 for first floor, etc.
-- Include staircase if floors > 1
+CRITICAL SPACE RULES — YOU MUST FOLLOW ALL:
+1. ALL rooms together MUST cover at least 90% of the usable area (${Math.round(totalArea * 0.9)} sq ft minimum)
+2. Rooms must tile like a grid — NO empty gaps between rooms
+3. x must start at 1, y must start at 1
+4. Every room: x+width <= ${input.plotWidth - 1}, y+length <= ${input.plotLength - 1}
+5. Rooms must NOT overlap — verify each pair
+6. All values must be integers
+7. Rows of rooms must align: rooms in the same row share the same y and same length
+8. Each floor must independently cover the full plot area
+9. Include staircase on every floor if floors > 1
+
+LAYOUT STRATEGY:
+- Divide the plot into horizontal bands (rows), each row spanning full width ${usableW}
+- Within each row, split width among rooms (widths must sum to exactly ${usableW})
+- Typical band heights: 10-14 feet per row, stacked until total = ${usableL}
 
 Return ONLY a raw JSON object (no markdown, no \`\`\`json, no explanation):
 {
   "rooms": [
-    { "name": "Living Room", "x": 1, "y": 1, "width": 15, "length": 12, "floor": 0 },
-    { "name": "Kitchen", "x": 16, "y": 1, "width": 10, "length": 10, "floor": 0 }
+    { "name": "Living Room", "x": 1, "y": 1, "width": ${Math.round(usableW * 0.55)}, "length": ${Math.round(usableL * 0.35)}, "floor": 0 },
+    { "name": "Kitchen", "x": ${1 + Math.round(usableW * 0.55)}, "y": 1, "width": ${usableW - Math.round(usableW * 0.55)}, "length": ${Math.round(usableL * 0.35)}, "floor": 0 }
   ],
-  "description": "Brief professional description of this layout",
+  "description": "Brief professional description",
   "vastuNotes": "Vastu notes or null"
 }`;
 
