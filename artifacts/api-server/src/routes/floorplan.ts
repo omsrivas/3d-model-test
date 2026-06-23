@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { GenerateFloorPlanBody } from "@workspace/api-zod";
 
 const router = Router();
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 const ROOM_COLORS: Record<string, string> = {
   "living room": "#E8D5B7",
@@ -73,9 +73,11 @@ Return ONLY a raw JSON object (no markdown, no \`\`\`json, no explanation):
 }`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const result = await model.generateContent(prompt);
-    const content = result.response.text();
+    const result = await genAI.models.generateContent({
+      model: "gemini-2.0-flash-lite",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    });
+    const content = result.text ?? "";
 
     let parsedResult: any;
     try {
