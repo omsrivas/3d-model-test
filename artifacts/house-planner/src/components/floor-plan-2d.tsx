@@ -5,10 +5,28 @@ interface FloorPlan2DProps {
   result: FloorPlanResult;
 }
 
+const ROOM_COLORS: Record<string, string> = {
+  "living": "#FF6B6B", "drawing": "#FF6B6B", "hall": "#FF6B6B",
+  "master bedroom": "#4ECDC4", "bedroom 1": "#4ECDC4",
+  "bedroom": "#45B7D1",
+  "bathroom": "#96CEB4", "toilet": "#96CEB4", "washroom": "#96CEB4",
+  "kitchen": "#FFEAA7",
+  "dining": "#DDA0DD",
+  "pooja": "#FFB347", "mandir": "#FFB347",
+  "study": "#B39DDB", "office": "#B39DDB",
+  "parking": "#90A4AE", "garage": "#90A4AE",
+  "garden": "#81C784", "lawn": "#81C784", "courtyard": "#A5D6A7",
+  "staircase": "#BCAAA4", "stairs": "#BCAAA4",
+  "balcony": "#F48FB1",
+  "lobby": "#FFD54F", "foyer": "#FFD54F",
+  "passage": "#CE93D8", "corridor": "#CE93D8",
+  "utility": "#80CBC4", "store": "#A1887F",
+};
+
 const ROOM_ICONS: Record<string, string> = {
-  "living": "🛋️", "drawing": "🛋️", "hall": "🛋️",
-  "master bedroom": "🛏️", "bedroom": "🛏️",
-  "kitchen": "🍳", "dining": "🍽️",
+  "living": "🛋", "drawing": "🛋", "hall": "🛋",
+  "master bedroom": "🛏", "bedroom": "🛏",
+  "kitchen": "🍳", "dining": "🍽",
   "bathroom": "🚿", "toilet": "🚽", "washroom": "🚿",
   "pooja": "🪔", "mandir": "🪔",
   "study": "📚", "office": "💻",
@@ -18,305 +36,253 @@ const ROOM_ICONS: Record<string, string> = {
   "balcony": "🌅",
   "lobby": "🚪", "foyer": "🚪",
   "store": "📦", "utility": "🔧",
-  "servant": "🏠", "passage": "〰️", "corridor": "〰️",
 };
+
+function getRoomColor(name: string): string {
+  const lower = name.toLowerCase();
+  for (const [key, color] of Object.entries(ROOM_COLORS)) {
+    if (lower.includes(key)) return color;
+  }
+  const palette = ["#FF8A80","#82B1FF","#CCFF90","#FFD180","#EA80FC","#80D8FF"];
+  let h = 0; for (const c of lower) h = (h * 31 + c.charCodeAt(0)) & 0xfffffff;
+  return palette[Math.abs(h) % palette.length];
+}
 
 function getRoomIcon(name: string): string {
   const lower = name.toLowerCase();
   for (const [key, icon] of Object.entries(ROOM_ICONS)) {
     if (lower.includes(key)) return icon;
   }
-  return "◻️";
+  return "";
 }
 
-function darken(hex: string, amount = 40): string {
-  const num = parseInt(hex.slice(1), 16);
-  const r = Math.max(0, (num >> 16) - amount);
-  const g = Math.max(0, ((num >> 8) & 0xff) - amount);
-  const b = Math.max(0, (num & 0xff) - amount);
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+function darken(hex: string, pct = 0.35): string {
+  const n = parseInt(hex.replace("#",""), 16);
+  const r = Math.max(0, Math.round(((n >> 16) & 0xff) * (1 - pct)));
+  const g = Math.max(0, Math.round(((n >> 8) & 0xff) * (1 - pct)));
+  const b = Math.max(0, Math.round((n & 0xff) * (1 - pct)));
+  return `rgb(${r},${g},${b})`;
 }
-
-const FACING_ARROWS: Record<string, { label: string; rotate: number }> = {
-  North: { label: "N", rotate: 0 },
-  South: { label: "S", rotate: 180 },
-  East: { label: "E", rotate: 90 },
-  West: { label: "W", rotate: 270 },
-  "North-East": { label: "NE", rotate: 45 },
-  "North-West": { label: "NW", rotate: 315 },
-  "South-East": { label: "SE", rotate: 135 },
-  "South-West": { label: "SW", rotate: 225 },
-};
 
 export function FloorPlan2D({ result }: FloorPlan2DProps) {
   const [activeFloor, setActiveFloor] = React.useState(0);
-  const [hoveredRoom, setHoveredRoom] = React.useState<number | null>(null);
+  const [hovered, setHovered] = React.useState<number | null>(null);
 
-  const roomsOnFloor = useMemo(
-    () => result.rooms.filter((r) => r.floor === activeFloor),
-    [result.rooms, activeFloor]
-  );
+  const floors = useMemo(() => Math.max(1, ...result.rooms.map(r => r.floor + 1)), [result.rooms]);
+  const roomsOnFloor = useMemo(() => result.rooms.filter(r => r.floor === activeFloor), [result.rooms, activeFloor]);
 
-  const maxFloor = useMemo(
-    () => Math.max(0, ...result.rooms.map((r) => r.floor)),
-    [result.rooms]
-  );
-
-  const padding = 18;
-  const viewBoxWidth = result.plotWidth + padding * 2;
-  const viewBoxHeight = result.plotLength + padding * 2;
+  // SVG coordinate system: 1 plot-unit = scale px
+  const PAD = 14;
+  const vw = result.plotWidth + PAD * 2;
+  const vh = result.plotLength + PAD * 2;
 
   const facing = (result as any).facing ?? "North";
-  const facingInfo = FACING_ARROWS[facing] ?? { label: "N", rotate: 0 };
+  const facingColors: Record<string, string> = {
+    North: "#3B82F6", South: "#EF4444", East: "#F59E0B", West: "#10B981",
+    "North-East": "#8B5CF6", "North-West": "#06B6D4", "South-East": "#F97316", "South-West": "#EC4899",
+  };
+  const fColor = facingColors[facing] ?? "#374151";
 
   return (
-    <div className="flex flex-col gap-4 w-full h-full">
-      {result.floors > 1 && (
-        <div className="flex gap-2 border-b border-border pb-2">
-          {Array.from({ length: result.floors }).map((_, i) => (
-            <button
-              key={i}
-              onClick={() => setActiveFloor(i)}
-              className={`px-4 py-2 text-sm font-semibold rounded-full transition-all ${
-                activeFloor === i
-                  ? "bg-orange-500 text-white shadow-md"
-                  : "bg-muted text-muted-foreground hover:bg-orange-100"
-              }`}
-            >
+    <div className="flex flex-col gap-3 w-full">
+      {/* Floor tabs */}
+      {floors > 1 && (
+        <div className="flex gap-2">
+          {Array.from({ length: floors }).map((_, i) => (
+            <button key={i} onClick={() => setActiveFloor(i)}
+              className={`px-4 py-1.5 text-sm font-semibold rounded-full transition-all ${
+                activeFloor === i ? "bg-orange-500 text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-orange-50"
+              }`}>
               {i === 0 ? "Ground Floor" : `Floor ${i}`}
             </button>
           ))}
         </div>
       )}
 
-      <div className="relative w-full border-2 border-gray-200 rounded-2xl bg-gray-50 overflow-hidden shadow-lg"
-           style={{ aspectRatio: `${viewBoxWidth} / ${viewBoxHeight}` }}>
-
-        {/* Blueprint grid background */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, rgba(99,102,241,0.07) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(99,102,241,0.07) 1px, transparent 1px)
-            `,
-            backgroundSize: "24px 24px",
-          }}
-        />
-
+      {/* SVG Plan */}
+      <div className="w-full rounded-xl overflow-hidden border border-gray-200 shadow-md bg-slate-50">
         <svg
-          viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
-          className="w-full h-full"
+          viewBox={`0 0 ${vw} ${vh}`}
+          className="w-full"
+          style={{ display: "block" }}
           preserveAspectRatio="xMidYMid meet"
         >
           <defs>
-            {/* Shadow filter */}
-            <filter id="room-shadow" x="-10%" y="-10%" width="120%" height="120%">
-              <feDropShadow dx="0.3" dy="0.5" stdDeviation="0.4" floodOpacity="0.25" />
-            </filter>
-            {/* Parking hatch pattern */}
-            <pattern id="parking-hatch" patternUnits="userSpaceOnUse" width="4" height="4">
-              <line x1="0" y1="4" x2="4" y2="0" stroke="#607D8B" strokeWidth="0.6" strokeOpacity="0.5" />
+            {/* Clip all rooms to plot area */}
+            <clipPath id="plot-clip">
+              <rect x={PAD} y={PAD} width={result.plotWidth} height={result.plotLength} />
+            </clipPath>
+
+            {/* Grid background */}
+            <pattern id="grid-bg" patternUnits="userSpaceOnUse" width="5" height="5">
+              <path d="M 5 0 L 0 0 0 5" fill="none" stroke="rgba(99,102,241,0.08)" strokeWidth="0.4"/>
             </pattern>
+
+            {/* Parking hatch */}
+            <pattern id="hatch-parking" patternUnits="userSpaceOnUse" width="3" height="3">
+              <line x1="0" y1="3" x2="3" y2="0" stroke="#607D8B" strokeWidth="0.5" strokeOpacity="0.4"/>
+            </pattern>
+
             {/* Garden dots */}
-            <pattern id="garden-dots" patternUnits="userSpaceOnUse" width="4" height="4">
-              <circle cx="2" cy="2" r="0.7" fill="#4CAF50" fillOpacity="0.4" />
+            <pattern id="dots-garden" patternUnits="userSpaceOnUse" width="3" height="3">
+              <circle cx="1.5" cy="1.5" r="0.5" fill="#4CAF50" fillOpacity="0.4"/>
             </pattern>
-            {/* Gradient overlays for rooms */}
-            {roomsOnFloor.map((room, i) => (
-              <linearGradient key={i} id={`grad-${i}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor={room.color || "#E0E0E0"} stopOpacity="1" />
-                <stop offset="100%" stopColor={darken(room.color || "#E0E0E0", 25)} stopOpacity="1" />
-              </linearGradient>
-            ))}
+
+            {/* Room gradients */}
+            {roomsOnFloor.map((room, i) => {
+              const c = room.color || getRoomColor(room.name);
+              return (
+                <linearGradient key={i} id={`rg-${i}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor={c} stopOpacity="1" />
+                  <stop offset="100%" stopColor={darken(c, 0.18)} stopOpacity="1" />
+                </linearGradient>
+              );
+            })}
+
+            {/* Shadow */}
+            <filter id="fshadow">
+              <feDropShadow dx="1" dy="1.5" stdDeviation="1.2" floodOpacity="0.15"/>
+            </filter>
           </defs>
 
-          {/* Outer plot shadow */}
-          <rect
-            x={padding + 1.5}
-            y={padding + 2}
-            width={result.plotWidth}
-            height={result.plotLength}
-            fill="rgba(0,0,0,0.08)"
-            rx="1"
-          />
+          {/* Background */}
+          <rect width={vw} height={vh} fill="url(#grid-bg)" />
 
-          {/* Plot boundary */}
-          <rect
-            x={padding}
-            y={padding}
-            width={result.plotWidth}
-            height={result.plotLength}
-            fill="white"
-            stroke="#1a1a2e"
-            strokeWidth="1.5"
-            rx="0.5"
-          />
+          {/* Plot outer shadow */}
+          <rect x={PAD+1} y={PAD+1.5} width={result.plotWidth} height={result.plotLength}
+            fill="rgba(0,0,0,0.06)" rx="1" />
 
-          {/* Dimension labels */}
-          <text x={padding + result.plotWidth / 2} y={padding - 5} textAnchor="middle"
-            fontSize="3.5" fill="#64748b" fontFamily="sans-serif" fontWeight="600">
-            {result.plotWidth} ft
-          </text>
-          <text x={padding - 5} y={padding + result.plotLength / 2} textAnchor="middle"
-            fontSize="3.5" fill="#64748b" fontFamily="sans-serif" fontWeight="600"
-            transform={`rotate(-90, ${padding - 5}, ${padding + result.plotLength / 2})`}>
-            {result.plotLength} ft
-          </text>
+          {/* Plot area (white base) */}
+          <rect x={PAD} y={PAD} width={result.plotWidth} height={result.plotLength}
+            fill="white" stroke="#1e293b" strokeWidth="1.2" rx="0.5" />
 
-          {/* Rooms */}
-          {roomsOnFloor.map((room, i) => {
-            const isHovered = hoveredRoom === i;
-            const lower = room.name.toLowerCase();
-            const isParking = lower.includes("parking") || lower.includes("garage");
-            const isGarden = lower.includes("garden") || lower.includes("lawn") || lower.includes("courtyard");
-            const isStair = lower.includes("stair");
-            const icon = getRoomIcon(room.name);
-            const borderColor = darken(room.color || "#E0E0E0", 50);
-            const sqft = room.width * room.length;
-            const fontSize = Math.max(2.2, Math.min(room.width, room.length) * 0.13);
-            const iconSize = Math.max(3, Math.min(room.width, room.length) * 0.22);
+          {/* Dimension arrows */}
+          {/* Width (top) */}
+          <g>
+            <line x1={PAD} y1={PAD - 4} x2={PAD + result.plotWidth} y2={PAD - 4} stroke="#94a3b8" strokeWidth="0.5" markerEnd="url(#arr)" markerStart="url(#arr)"/>
+            <text x={PAD + result.plotWidth / 2} y={PAD - 5.5} textAnchor="middle" fontSize="3.8" fill="#64748b" fontFamily="sans-serif" fontWeight="700">{result.plotWidth} ft</text>
+          </g>
+          {/* Length (left) */}
+          <text x={PAD - 5} y={PAD + result.plotLength / 2} textAnchor="middle" fontSize="3.8" fill="#64748b" fontFamily="sans-serif" fontWeight="700"
+            transform={`rotate(-90, ${PAD - 5}, ${PAD + result.plotLength / 2})`}>{result.plotLength} ft</text>
 
-            return (
-              <g
-                key={i}
-                transform={`translate(${room.x + padding}, ${room.y + padding})`}
-                onMouseEnter={() => setHoveredRoom(i)}
-                onMouseLeave={() => setHoveredRoom(null)}
-                style={{ cursor: "pointer" }}
-                filter={isHovered ? "url(#room-shadow)" : undefined}
-              >
-                {/* Main room fill */}
-                <rect
-                  width={room.width}
-                  height={room.length}
-                  fill={`url(#grad-${i})`}
-                  rx="0.5"
-                />
-                {/* Texture overlay for special rooms */}
-                {isParking && (
-                  <rect width={room.width} height={room.length} fill="url(#parking-hatch)" rx="0.5" />
-                )}
-                {isGarden && (
-                  <rect width={room.width} height={room.length} fill="url(#garden-dots)" rx="0.5" />
-                )}
-                {/* Border */}
-                <rect
-                  width={room.width}
-                  height={room.length}
-                  fill="none"
-                  stroke={borderColor}
-                  strokeWidth={isHovered ? "0.8" : "0.5"}
-                  rx="0.5"
-                />
-                {/* Wall thickness lines */}
-                <line x1="0" y1="0" x2={room.width} y2="0" stroke={borderColor} strokeWidth="0.9" />
-                <line x1="0" y1="0" x2="0" y2={room.length} stroke={borderColor} strokeWidth="0.9" />
+          {/* ── ROOMS (clipped to plot boundary) ── */}
+          <g clipPath="url(#plot-clip)">
+            {roomsOnFloor.map((room, i) => {
+              const rx = room.x + PAD;
+              const ry = room.y + PAD;
+              const rw = room.width;
+              const rl = room.length;
+              const sqft = rw * rl;
+              const lower = room.name.toLowerCase();
+              const isParking = lower.includes("parking") || lower.includes("garage");
+              const isGarden = lower.includes("garden") || lower.includes("lawn") || lower.includes("courtyard");
+              const isStair = lower.includes("stair");
+              const icon = getRoomIcon(room.name);
+              const baseColor = room.color || getRoomColor(room.name);
+              const borderColor = darken(baseColor, 0.4);
+              const fs = Math.max(2, Math.min(rw, rl) * 0.14);
+              const iconFs = Math.max(2.5, Math.min(rw, rl) * 0.22);
+              const isHov = hovered === i;
 
-                {/* Icon */}
-                {!isStair && room.width > 5 && room.length > 5 && (
-                  <text
-                    x={room.width / 2}
-                    y={room.length / 2 - fontSize * 0.9}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fontSize={iconSize}
-                  >
-                    {icon}
-                  </text>
-                )}
-
-                {/* Room name */}
-                <text
-                  x={room.width / 2}
-                  y={room.length / 2 + (room.width > 5 && room.length > 5 ? iconSize * 0.6 : 0)}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fill="#1a1a2e"
-                  fontSize={fontSize}
-                  fontWeight="700"
-                  fontFamily="sans-serif"
-                  style={{ textShadow: "0 0 2px rgba(255,255,255,0.8)" }}
+              return (
+                <g key={i}
+                  onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
+                  style={{ cursor: "pointer" }}
+                  filter={isHov ? "url(#fshadow)" : undefined}
                 >
-                  {room.name}
-                </text>
+                  {/* Fill */}
+                  <rect x={rx} y={ry} width={rw} height={rl} fill={`url(#rg-${i})`} />
+                  {/* Texture overlay */}
+                  {isParking && <rect x={rx} y={ry} width={rw} height={rl} fill="url(#hatch-parking)" />}
+                  {isGarden && <rect x={rx} y={ry} width={rw} height={rl} fill="url(#dots-garden)" />}
+                  {/* Staircase diagonal lines */}
+                  {isStair && Array.from({ length: Math.ceil(rl / 2) }).map((_, si) => (
+                    <line key={si} x1={rx} y1={ry + si * 2 + 1} x2={rx + rw} y2={ry + si * 2 + 1}
+                      stroke="#78716c" strokeWidth="0.4" strokeOpacity="0.6"/>
+                  ))}
 
-                {/* Dimensions + area */}
-                {room.width > 6 && room.length > 5 && (
-                  <text
-                    x={room.width / 2}
-                    y={room.length / 2 + (room.width > 5 && room.length > 5 ? iconSize * 0.6 : 0) + fontSize * 1.4}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill="#374151"
-                    fontSize={fontSize * 0.78}
-                    fontFamily="sans-serif"
-                    opacity="0.85"
-                  >
-                    {room.width}×{room.length} · {sqft} sqft
+                  {/* Border — thicker on hover */}
+                  <rect x={rx} y={ry} width={rw} height={rl} fill="none"
+                    stroke={isHov ? "#1e293b" : borderColor} strokeWidth={isHov ? "0.9" : "0.5"} />
+
+                  {/* Wall accent lines (top + left) */}
+                  <line x1={rx} y1={ry} x2={rx + rw} y2={ry} stroke={borderColor} strokeWidth="1.0" />
+                  <line x1={rx} y1={ry} x2={rx} y2={ry + rl} stroke={borderColor} strokeWidth="1.0" />
+
+                  {/* Icon */}
+                  {!isStair && icon && rw > 5 && rl > 5 && (
+                    <text x={rx + rw / 2} y={ry + rl / 2 - fs * 1.0}
+                      textAnchor="middle" dominantBaseline="middle" fontSize={iconFs}>{icon}</text>
+                  )}
+
+                  {/* Room name */}
+                  <text x={rx + rw / 2}
+                    y={ry + rl / 2 + (icon && rw > 5 && rl > 5 ? iconFs * 0.55 : 0)}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fill="#1e293b" fontSize={fs} fontWeight="700" fontFamily="sans-serif">
+                    {room.name}
                   </text>
-                )}
 
-                {/* Hover highlight ring */}
-                {isHovered && (
-                  <rect
-                    width={room.width}
-                    height={room.length}
-                    fill="none"
-                    stroke="white"
-                    strokeWidth="0.6"
-                    strokeDasharray="1.5,1"
-                    rx="0.5"
-                    opacity="0.7"
-                  />
-                )}
-              </g>
-            );
-          })}
+                  {/* Dimensions */}
+                  {rw > 7 && rl > 5 && (
+                    <text x={rx + rw / 2}
+                      y={ry + rl / 2 + (icon && rw > 5 && rl > 5 ? iconFs * 0.55 : 0) + fs * 1.5}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fill="#374151" fontSize={fs * 0.75} fontFamily="sans-serif" opacity="0.8">
+                      {rw}×{rl} · {sqft} sqft
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
 
-          {/* Compass rose */}
-          <g transform={`translate(${viewBoxWidth - 14}, 12)`}>
-            <circle cx="0" cy="0" r="7" fill="white" stroke="#e2e8f0" strokeWidth="0.5" />
-            {/* N arrow */}
-            <g transform={`rotate(${facingInfo.rotate})`}>
-              <polygon points="0,-5.5 1.5,1 0,-0.5 -1.5,1" fill="#ef4444" />
-              <polygon points="0,5.5 1.5,-1 0,0.5 -1.5,-1" fill="#94a3b8" />
-            </g>
-            <text x="0" y="0" textAnchor="middle" dominantBaseline="middle"
-              fontSize="2.2" fill="#1e293b" fontWeight="800" fontFamily="sans-serif">
-              {facingInfo.label}
+          {/* ── OUTER WALL BORDER (drawn on top of rooms) ── */}
+          <rect x={PAD} y={PAD} width={result.plotWidth} height={result.plotLength}
+            fill="none" stroke="#1e293b" strokeWidth="1.5" rx="0.5" />
+
+          {/* Facing badge pill (bottom-left, inside plot) */}
+          <g transform={`translate(${PAD + 2}, ${PAD + result.plotLength - 7})`}>
+            <rect x="0" y="0" width={facing.length * 2.2 + 10} height="6" rx="3" fill={fColor} />
+            <text x={(facing.length * 2.2 + 10) / 2} y="3" textAnchor="middle" dominantBaseline="middle"
+              fontSize="2.8" fill="white" fontFamily="sans-serif" fontWeight="700">
+              {facing} Facing
             </text>
           </g>
 
-          {/* Facing label badge */}
-          <g transform={`translate(${padding}, ${viewBoxHeight - 5})`}>
-            <rect x="0" y="-4" width={`${facing.length * 2 + 12}`} height="5" rx="2" fill="#1a1a2e" opacity="0.8" />
-            <text x="6" y="-1.5" fontSize="2.6" fill="white" fontFamily="sans-serif" fontWeight="600">
-              {facing} Facing
-            </text>
+          {/* Compass rose (top-right, inside plot) */}
+          <g transform={`translate(${PAD + result.plotWidth - 9}, ${PAD + 9})`}>
+            <circle cx="0" cy="0" r="7" fill="white" fillOpacity="0.92" stroke="#e2e8f0" strokeWidth="0.6"/>
+            {/* N pointer red */}
+            <polygon points="0,-5.5 1.2,0.5 0,-1.5 -1.2,0.5" fill="#ef4444"/>
+            {/* S pointer gray */}
+            <polygon points="0,5.5 1.2,-0.5 0,1.5 -1.2,-0.5" fill="#94a3b8"/>
+            {/* Cardinal labels */}
+            <text x="0" y="-6.5" textAnchor="middle" dominantBaseline="middle" fontSize="2" fill="#ef4444" fontWeight="800" fontFamily="sans-serif">N</text>
+            <text x="0" y="7.2" textAnchor="middle" dominantBaseline="middle" fontSize="2" fill="#94a3b8" fontWeight="700" fontFamily="sans-serif">S</text>
+            <text x="7.2" y="0" textAnchor="middle" dominantBaseline="middle" fontSize="2" fill="#64748b" fontWeight="700" fontFamily="sans-serif">E</text>
+            <text x="-7.2" y="0" textAnchor="middle" dominantBaseline="middle" fontSize="2" fill="#64748b" fontWeight="700" fontFamily="sans-serif">W</text>
           </g>
         </svg>
       </div>
 
-      {/* Room legend */}
-      <div className="flex flex-wrap gap-2 px-1">
-        {roomsOnFloor.map((room, i) => (
-          <div
-            key={i}
-            onMouseEnter={() => setHoveredRoom(i)}
-            onMouseLeave={() => setHoveredRoom(null)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all border ${
-              hoveredRoom === i ? "scale-105 shadow-md border-gray-400" : "border-gray-200"
-            }`}
-            style={{ backgroundColor: room.color + "33", borderColor: room.color }}
-          >
-            <span>{getRoomIcon(room.name)}</span>
-            <span style={{ color: darken(room.color || "#999", 60) }}>{room.name}</span>
-            <span className="opacity-60" style={{ color: darken(room.color || "#999", 40) }}>
-              {room.width * room.length} sqft
-            </span>
-          </div>
-        ))}
+      {/* Legend chips */}
+      <div className="flex flex-wrap gap-1.5">
+        {roomsOnFloor.map((room, i) => {
+          const c = room.color || getRoomColor(room.name);
+          const icon = getRoomIcon(room.name);
+          return (
+            <div key={i}
+              onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold cursor-pointer transition-all border ${hovered === i ? "scale-105 shadow" : ""}`}
+              style={{ backgroundColor: c + "30", borderColor: c, color: darken(c, 0.5) }}>
+              {icon && <span>{icon}</span>}
+              <span>{room.name}</span>
+              <span className="opacity-60">{room.width * room.length}sqft</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
