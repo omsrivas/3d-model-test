@@ -1,0 +1,316 @@
+You are a senior architect, UI designer and Three.js engineer.
+
+Build a premium AI house planner similar to MakeMyHouse.
+
+The application must generate both:
+
+1. Premium 2D floor plans
+2. Interactive 3D dollhouse models
+
+Never create random extruded blocks.
+
+All geometry must come from actual room coordinates.
+
+====================================================
+INPUTS
+====================================================
+
+User may provide:
+
+- Plot width
+- Plot depth
+- Unit (ft/m)
+- Facing direction
+- Number of floors
+- Bedroom count
+- Bathroom count
+- Additional rooms
+- Vastu preference
+- Special requirements
+
+Dimensions and floor count change every time.
+
+The visual style must remain consistent.
+
+====================================================
+2D FLOOR PLAN
+====================================================
+
+Generate a premium top-down architectural plan.
+
+Style reference:
+
+Luxury architectural studio presentations.
+
+Requirements:
+
+- Dark olive background (#2c3327)
+- Terracotta exterior walls (#a76a53)
+- Proper wall thickness
+- Accurate scale
+- Dimension lines
+- Room labels centered
+- Door swing arcs
+- Window symbols
+- Furniture outlines
+- Beds
+- Sofa
+- Dining table
+- Kitchen counters
+- Toilet fixtures
+- Wardrobes
+- Garden areas
+- Car parking
+- Compass showing North direction
+
+Text must never overlap.
+
+Keep proportions realistic.
+
+Support multiple floors.
+
+Provide floor tabs.
+
+Render using SVG or Canvas.
+
+====================================================
+HOUSE LAYOUT RULES
+====================================================
+
+Generate room coordinates first.
+
+Use adjacency logic.
+
+Maintain circulation.
+
+Avoid wasted spaces.
+
+Preserve dimensions.
+
+Respect Vastu preferences when enabled.
+
+Never overlap rooms.
+
+Generate:
+
+Living room
+Dining
+Kitchen
+Bedrooms
+Bathrooms
+Pooja room
+Utility
+Store room
+Balcony
+Parking
+Staircase
+
+====================================================
+3D MODEL
+====================================================
+
+Do not simply extrude rectangles.
+
+Generate a realistic dollhouse model.
+
+Exterior wall thickness:
+
+9 inches
+
+Interior wall thickness:
+
+4.5 inches
+
+Wall height:
+
+10 feet
+
+Floor slab:
+
+6 inches
+
+Roof slab:
+
+Present
+
+Ceiling:
+
+Present
+
+Columns:
+
+Present
+
+Parapet walls:
+
+Present
+
+Staircase:
+
+Present
+
+Balcony:
+
+Present
+
+Doors:
+
+Present
+
+Windows:
+
+Present
+
+====================================================
+INTERIOR OBJECTS
+====================================================
+
+Living room:
+
+- Sofa
+- TV unit
+- Center table
+
+Dining:
+
+- Dining table
+- Chairs
+
+Kitchen:
+
+- Counter
+- Stove
+- Sink
+
+Bedroom:
+
+- Bed
+- Side tables
+- Wardrobe
+
+Bathroom:
+
+- WC
+- Basin
+- Shower area
+
+Parking:
+
+- Cars
+
+Landscape:
+
+- Trees
+- Plants
+
+Use low-poly realistic models.
+
+====================================================
+VISUAL STYLE
+====================================================
+
+Modern Indian architecture.
+
+Warm lighting.
+
+Soft shadows.
+
+Premium materials.
+
+Wood textures.
+
+Glass windows.
+
+Concrete textures.
+
+Avoid cartoon appearance.
+
+Avoid Minecraft style.
+
+Avoid random colors.
+
+Use realistic proportions.
+
+====================================================
+CAMERA MODES
+====================================================
+
+Dollhouse Mode
+
+Entire house visible.
+
+Orbit Mode
+
+Rotate 360 degrees.
+
+Zoom in and out.
+
+Pan freely.
+
+Walkthrough Mode
+
+First person navigation.
+
+Collision enabled.
+
+Exploded View
+
+Separate floors vertically.
+
+Floor Isolation
+
+Show selected floor only.
+
+====================================================
+THREE.JS REQUIREMENTS
+====================================================
+
+Use:
+
+Three.js
+
+OrbitControls
+
+PerspectiveCamera
+
+AmbientLight
+
+DirectionalLight
+
+Shadows enabled
+
+Antialias enabled
+
+Responsive design
+
+Enable:
+
+controls.enableZoom=true
+
+controls.enableRotate=true
+
+controls.enablePan=true
+
+Use smooth damping.
+
+====================================================
+IMPORTANT
+====================================================
+
+Never generate floating room labels.
+
+Never stack colored boxes.
+
+Never create unrealistic room heights.
+
+Never distort dimensions.
+
+Never overlap objects.
+
+Always derive 3D geometry from room coordinates.
+
+Maintain premium architectural quality similar to MakeMyHouse.
+
+2D and 3D layouts must always match perfectly.
+
+The output should feel like a professional architectural visualization platform, not a toy model.

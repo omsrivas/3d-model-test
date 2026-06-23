@@ -1,288 +1,365 @@
 import React, { useMemo } from "react";
 import type { FloorPlanResult } from "@workspace/api-client-react";
 
-interface FloorPlan2DProps {
-  result: FloorPlanResult;
+interface Room { name: string; x: number; y: number; width: number; length: number; floor: number; color?: string; }
+interface FloorPlan2DProps { result: FloorPlanResult; }
+
+// ── palette ──────────────────────────────────────────────────
+const BG        = "#2c3327";
+const WALL_CLR  = "#a76a53";
+const ROOM_FILL = "#f5f0e8";
+const WALL_T    = 0.7;   // visual wall thickness in plot-units
+const PAD       = 18;
+
+// ── furniture helpers ─────────────────────────────────────────
+type FEl = React.ReactElement;
+
+function Bed(rx: number, ry: number, rw: number, rl: number): FEl {
+  const bw = Math.min(rw * 0.62, 5.5), bl = Math.min(rl * 0.65, 7);
+  const bx = rx + (rw - bw) / 2, by = ry + rl * 0.18;
+  const hw = bw, hh = Math.min(rl * 0.12, 1.2);
+  return (
+    <g key="bed" stroke="#a76a53" strokeWidth="0.25" fill="none">
+      <rect x={bx} y={by} width={bw} height={bl} rx="0.3" fill="#e8ddd0" stroke="#a76a53" strokeWidth="0.3"/>
+      <rect x={bx} y={by} width={hw} height={hh} rx="0.2" fill="#c9b49a"/>
+      <ellipse cx={bx + bw * 0.28} cy={by + bl * 0.12} rx={bw * 0.15} ry={hh * 0.4} fill="#d4c4b0"/>
+      <ellipse cx={bx + bw * 0.72} cy={by + bl * 0.12} rx={bw * 0.15} ry={hh * 0.4} fill="#d4c4b0"/>
+      <rect x={bx + bw * 0.08} y={by + hh + bl * 0.04} width={bw * 0.84} height={bl * 0.88} rx="0.2" fill="#ede4d8"/>
+      {/* wardrobe */}
+      <rect x={rx + rw * 0.05} y={ry + rl * 0.78} width={rw * 0.35} height={rl * 0.18} fill="#ddd4c8" stroke="#a76a53" strokeWidth="0.25"/>
+      <line x1={rx + rw * 0.225} y1={ry + rl * 0.78} x2={rx + rw * 0.225} y2={ry + rl * 0.96} stroke="#a76a53" strokeWidth="0.2"/>
+    </g>
+  );
 }
 
-const ROOM_COLORS: Record<string, string> = {
-  "living": "#FF6B6B", "drawing": "#FF6B6B", "hall": "#FF6B6B",
-  "master bedroom": "#4ECDC4", "bedroom 1": "#4ECDC4",
-  "bedroom": "#45B7D1",
-  "bathroom": "#96CEB4", "toilet": "#96CEB4", "washroom": "#96CEB4",
-  "kitchen": "#FFEAA7",
-  "dining": "#DDA0DD",
-  "pooja": "#FFB347", "mandir": "#FFB347",
-  "study": "#B39DDB", "office": "#B39DDB",
-  "parking": "#90A4AE", "garage": "#90A4AE",
-  "garden": "#81C784", "lawn": "#81C784", "courtyard": "#A5D6A7",
-  "staircase": "#BCAAA4", "stairs": "#BCAAA4",
-  "balcony": "#F48FB1",
-  "lobby": "#FFD54F", "foyer": "#FFD54F",
-  "passage": "#CE93D8", "corridor": "#CE93D8",
-  "utility": "#80CBC4", "store": "#A1887F",
-};
-
-const ROOM_ICONS: Record<string, string> = {
-  "living": "🛋", "drawing": "🛋", "hall": "🛋",
-  "master bedroom": "🛏", "bedroom": "🛏",
-  "kitchen": "🍳", "dining": "🍽",
-  "bathroom": "🚿", "toilet": "🚽", "washroom": "🚿",
-  "pooja": "🪔", "mandir": "🪔",
-  "study": "📚", "office": "💻",
-  "parking": "🚗", "garage": "🚗",
-  "garden": "🌿", "lawn": "🌳", "courtyard": "🌸",
-  "staircase": "🪜", "stairs": "🪜",
-  "balcony": "🌅",
-  "lobby": "🚪", "foyer": "🚪",
-  "store": "📦", "utility": "🔧",
-};
-
-function getRoomColor(name: string): string {
-  const lower = name.toLowerCase();
-  for (const [key, color] of Object.entries(ROOM_COLORS)) {
-    if (lower.includes(key)) return color;
-  }
-  const palette = ["#FF8A80","#82B1FF","#CCFF90","#FFD180","#EA80FC","#80D8FF"];
-  let h = 0; for (const c of lower) h = (h * 31 + c.charCodeAt(0)) & 0xfffffff;
-  return palette[Math.abs(h) % palette.length];
+function Sofa(rx: number, ry: number, rw: number, rl: number): FEl {
+  const sw = Math.min(rw * 0.65, 8), sd = Math.min(rl * 0.22, 2.8);
+  const sx = rx + (rw - sw) / 2, sy = ry + rl * 0.55;
+  return (
+    <g key="sofa" stroke="#a76a53" strokeWidth="0.25" fill="none">
+      {/* TV unit */}
+      <rect x={rx + rw * 0.15} y={ry + rl * 0.08} width={rw * 0.7} height={rl * 0.1} fill="#c8bfb3" stroke="#a76a53" strokeWidth="0.3"/>
+      {/* coffee table */}
+      <rect x={sx + sw * 0.2} y={sy - rl * 0.12} width={sw * 0.6} height={rl * 0.1} rx="0.3" fill="#ddd4c0" stroke="#a76a53" strokeWidth="0.25"/>
+      {/* sofa base */}
+      <rect x={sx} y={sy} width={sw} height={sd} rx="0.4" fill="#c9bfb2" stroke="#a76a53" strokeWidth="0.3"/>
+      {/* sofa back */}
+      <rect x={sx} y={sy} width={sw} height={sd * 0.3} rx="0.3" fill="#b8aea0"/>
+      {/* cushions */}
+      {[0, 1, 2].map(i => (
+        <rect key={i} x={sx + i * (sw / 3) + 0.2} y={sy + sd * 0.32} width={sw / 3 - 0.4} height={sd * 0.6} rx="0.3" fill="#d4c9b8"/>
+      ))}
+    </g>
+  );
 }
 
-function getRoomIcon(name: string): string {
-  const lower = name.toLowerCase();
-  for (const [key, icon] of Object.entries(ROOM_ICONS)) {
-    if (lower.includes(key)) return icon;
-  }
-  return "";
+function Kitchen(rx: number, ry: number, rw: number, rl: number): FEl {
+  const cw = Math.min(rw * 0.9, 12);
+  return (
+    <g key="kit" stroke="#a76a53" strokeWidth="0.25" fill="none">
+      {/* counter top */}
+      <rect x={rx + (rw - cw) / 2} y={ry + WALL_T} width={cw} height={rl * 0.22} fill="#c8bfb3" stroke="#a76a53" strokeWidth="0.3"/>
+      {/* stove burners */}
+      {[0, 1, 2, 3].map(i => <circle key={i} cx={rx + rw * 0.25 + (i % 2) * rw * 0.18} cy={ry + rl * 0.11 + Math.floor(i / 2) * rl * 0.09} r={rl * 0.04} fill="#888" stroke="#555" strokeWidth="0.2"/>)}
+      {/* sink */}
+      <rect x={rx + rw * 0.65} y={ry + rl * 0.04} width={rw * 0.2} height={rl * 0.14} rx="0.2" fill="#d4d0cc" stroke="#888" strokeWidth="0.2"/>
+      <circle cx={rx + rw * 0.75} cy={ry + rl * 0.03} r={0.3} fill="#888"/>
+    </g>
+  );
 }
 
-function darken(hex: string, pct = 0.35): string {
-  const n = parseInt(hex.replace("#",""), 16);
-  const r = Math.max(0, Math.round(((n >> 16) & 0xff) * (1 - pct)));
-  const g = Math.max(0, Math.round(((n >> 8) & 0xff) * (1 - pct)));
-  const b = Math.max(0, Math.round((n & 0xff) * (1 - pct)));
-  return `rgb(${r},${g},${b})`;
+function Bathroom(rx: number, ry: number, rw: number, rl: number): FEl {
+  const cx = rx + rw / 2, cy = ry + rl / 2;
+  return (
+    <g key="bath" stroke="#a76a53" strokeWidth="0.25" fill="none">
+      {/* WC */}
+      <rect x={rx + WALL_T} y={ry + WALL_T} width={rw * 0.42} height={rl * 0.32} rx="0.4" fill="#e8e4e0" stroke="#a76a53" strokeWidth="0.25"/>
+      <ellipse cx={rx + WALL_T + rw * 0.21} cy={ry + WALL_T + rl * 0.22} rx={rw * 0.16} ry={rl * 0.1} fill="#d4d0cc"/>
+      {/* basin */}
+      <ellipse cx={cx} cy={ry + rl * 0.75} rx={rw * 0.2} ry={rl * 0.12} fill="#e8e4e0" stroke="#a76a53" strokeWidth="0.25"/>
+      <circle cx={cx} cy={ry + rl * 0.75} r={0.25} fill="#888"/>
+      {/* shower area */}
+      <rect x={rx + rw * 0.55} y={ry + WALL_T} width={rw * 0.4} height={rl * 0.35} strokeDasharray="0.4,0.3" stroke="#a76a53" strokeWidth="0.25" fill="#edf5f8"/>
+      <circle cx={rx + rw * 0.75} cy={ry + rl * 0.18} r={0.5} fill="none" stroke="#a76a53" strokeWidth="0.2"/>
+    </g>
+  );
 }
 
+function DiningTable(rx: number, ry: number, rw: number, rl: number): FEl {
+  const tw = Math.min(rw * 0.55, 5.5), td = Math.min(rl * 0.5, 4.5);
+  const tx = rx + (rw - tw) / 2, ty = ry + (rl - td) / 2;
+  const chairs = [
+    [tx + tw / 2, ty - 0.8, tw * 0.28, 0.7],
+    [tx + tw / 2, ty + td + 0.1, tw * 0.28, 0.7],
+    [tx - 0.8,   ty + td / 2, 0.7, td * 0.28],
+    [tx + tw + 0.1, ty + td / 2, 0.7, td * 0.28],
+    [tx + tw * 0.22, ty - 0.8, tw * 0.22, 0.65],
+    [tx + tw * 0.78 - tw * 0.22, ty - 0.8, tw * 0.22, 0.65],
+  ];
+  return (
+    <g key="dining" stroke="#a76a53" strokeWidth="0.25" fill="none">
+      <ellipse cx={tx + tw / 2} cy={ty + td / 2} rx={tw / 2} ry={td / 2} fill="#ddd4c0" stroke="#a76a53" strokeWidth="0.3"/>
+      {chairs.map(([cx, cy, cw, ch], i) => <rect key={i} x={cx as number} y={cy as number} width={cw as number} height={ch as number} rx="0.15" fill="#c8bfb3" stroke="#a76a53" strokeWidth="0.2"/>)}
+    </g>
+  );
+}
+
+function Parking(rx: number, ry: number, rw: number, rl: number): FEl {
+  const cw = Math.min(rw * 0.7, 4.5), cl = Math.min(rl * 0.55, 2.2);
+  const cx = rx + (rw - cw) / 2, cy = ry + (rl - cl) / 2;
+  return (
+    <g key="park" stroke="#a76a53" strokeWidth="0.25" fill="none">
+      <rect x={cx} y={cy} width={cw} height={cl} rx="0.4" fill="#c8d0d4" stroke="#a76a53" strokeWidth="0.3"/>
+      <rect x={cx + cw * 0.15} y={cy + cl * 0.1} width={cw * 0.7} height={cl * 0.5} rx="0.3" fill="#d4dce0"/>
+      {[0.18, 0.82].map(px => [0.08, 0.92].map((py, j) =>
+        <ellipse key={`${px}-${j}`} cx={cx + cw * px} cy={cy + cl * py} rx={Math.min(cw * 0.06, 0.35)} ry={Math.min(cl * 0.09, 0.3)} fill="#555"/>
+      ))}
+      <text x={rx + rw / 2} y={ry + rl * 0.1} textAnchor="middle" fontSize="1.8" fill="#6b7c8a" fontWeight="700" fontFamily="sans-serif">P</text>
+    </g>
+  );
+}
+
+function Garden(rx: number, ry: number, rw: number, rl: number): FEl {
+  const count = Math.min(Math.floor(rw * rl / 20), 6);
+  const positions = Array.from({ length: count }, (_, i) => ({
+    x: rx + 1.5 + (i % 3) * (rw - 3) / 2.5,
+    y: ry + 1.5 + Math.floor(i / 3) * (rl - 3) / 1.5,
+  }));
+  return (
+    <g key="garden" fill="none">
+      {positions.map((p, i) => (
+        <g key={i}>
+          <circle cx={p.x} cy={p.y} r={1.2} fill="#5a7a4a" opacity="0.6"/>
+          <circle cx={p.x} cy={p.y} r={0.7} fill="#6a9a58" opacity="0.8"/>
+        </g>
+      ))}
+    </g>
+  );
+}
+
+function StaircaseSymbol(rx: number, ry: number, rw: number, rl: number): FEl {
+  const steps = 8;
+  const sh = (rl - WALL_T * 2) / steps;
+  return (
+    <g key="stair" stroke="#a76a53" strokeWidth="0.2" fill="none">
+      {Array.from({ length: steps }).map((_, i) => (
+        <line key={i} x1={rx + WALL_T} y1={ry + WALL_T + i * sh} x2={rx + rw - WALL_T} y2={ry + WALL_T + i * sh} stroke="#a76a53" strokeWidth="0.2"/>
+      ))}
+      <polygon points={`${rx + rw * 0.45},${ry + WALL_T} ${rx + rw * 0.55},${ry + WALL_T} ${rx + rw * 0.5},${ry + WALL_T + 1}`} fill="#a76a53" opacity="0.7"/>
+    </g>
+  );
+}
+
+function getRoomFurniture(room: Room): FEl | null {
+  const n = room.name.toLowerCase();
+  const { x, y, width: w, length: l } = room;
+  if (n.includes("bedroom") || n.includes("master")) return Bed(x, y, w, l);
+  if (n.includes("living") || n.includes("drawing") || n.includes("hall")) return Sofa(x, y, w, l);
+  if (n.includes("kitchen")) return Kitchen(x, y, w, l);
+  if (n.includes("bathroom") || n.includes("toilet") || n.includes("washroom")) return Bathroom(x, y, w, l);
+  if (n.includes("dining")) return DiningTable(x, y, w, l);
+  if (n.includes("parking") || n.includes("garage")) return Parking(x, y, w, l);
+  if (n.includes("garden") || n.includes("lawn")) return Garden(x, y, w, l);
+  if (n.includes("stair")) return StaircaseSymbol(x, y, w, l);
+  return null;
+}
+
+// ── door arc ──────────────────────────────────────────────────
+function DoorArc({ room, allRooms }: { room: Room; allRooms: Room[] }) {
+  const n = room.name.toLowerCase();
+  if (n.includes("stair") || n.includes("parking") || n.includes("garden") || n.includes("balcony")) return null;
+  // Place door at center of front wall (smallest y side)
+  const dw = 2.5;
+  const dx = room.x + room.width / 2 - dw / 2;
+  const dy = room.y;
+  // Swing arc: quarter circle
+  const r = dw;
+  return (
+    <g stroke={WALL_CLR} strokeWidth="0.25" fill="none" opacity="0.8">
+      <line x1={dx} y1={dy} x2={dx} y2={dy + r} stroke={WALL_CLR} strokeWidth="0.2"/>
+      <path d={`M ${dx} ${dy + r} A ${r} ${r} 0 0 1 ${dx + r} ${dy}`} strokeDasharray="0.4,0.3"/>
+    </g>
+  );
+}
+
+// ── window symbol ────────────────────────────────────────────
+function WindowSymbol({ room }: { room: Room }) {
+  const n = room.name.toLowerCase();
+  if (n.includes("bathroom") || n.includes("stair") || n.includes("parking")) return null;
+  const ww = Math.min(room.width * 0.4, 3.5);
+  const wx = room.x + (room.width - ww) / 2;
+  return (
+    <g stroke={WALL_CLR} strokeWidth="0.3" fill="#87ceeb" fillOpacity="0.25">
+      <rect x={wx} y={room.y - 0.15} width={ww} height={0.8}/>
+      <line x1={wx + ww / 3} y1={room.y - 0.15} x2={wx + ww / 3} y2={room.y + 0.65} stroke={WALL_CLR} strokeWidth="0.15"/>
+      <line x1={wx + ww * 2 / 3} y1={room.y - 0.15} x2={wx + ww * 2 / 3} y2={room.y + 0.65} stroke={WALL_CLR} strokeWidth="0.15"/>
+    </g>
+  );
+}
+
+// ── dimension line ────────────────────────────────────────────
+function DimLine({ x1, y1, x2, y2, label }: { x1: number; y1: number; x2: number; y2: number; label: string }) {
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  return (
+    <g stroke="#8fb08a" strokeWidth="0.4" fill="none">
+      <line x1={x1} y1={y1} x2={x2} y2={y2}/>
+      <line x1={x1 - 1} y1={y1} x2={x1 + 1} y2={y1} strokeWidth="0.3"/>
+      <line x1={x2 - 1} y1={y2} x2={x2 + 1} y2={y2} strokeWidth="0.3"/>
+      <text x={mx} y={my - 1.2} textAnchor="middle" fontSize="3.2" fill="#8fb08a" fontFamily="sans-serif" fontWeight="600" stroke="none">{label}</text>
+    </g>
+  );
+}
+
+// ── compass ───────────────────────────────────────────────────
+function Compass({ cx, cy, r }: { cx: number; cy: number; r: number }) {
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={r} fill="#1e2a1a" stroke="#8fb08a" strokeWidth="0.4"/>
+      <circle cx={cx} cy={cy} r={r * 0.85} fill="none" stroke="#8fb08a" strokeWidth="0.2" strokeDasharray="1,1"/>
+      {/* N pointer red */}
+      <polygon points={`${cx},${cy - r * 0.7} ${cx - r * 0.18},${cy + r * 0.2} ${cx},${cy - r * 0.1} ${cx + r * 0.18},${cy + r * 0.2}`} fill="#c0392b"/>
+      {/* S pointer white */}
+      <polygon points={`${cx},${cy + r * 0.7} ${cx - r * 0.18},${cy - r * 0.2} ${cx},${cy + r * 0.1} ${cx + r * 0.18},${cy - r * 0.2}`} fill="#ecf0f1" opacity="0.8"/>
+      <text x={cx} y={cy - r * 0.78} textAnchor="middle" dominantBaseline="middle" fontSize={r * 0.28} fill="#c0392b" fontWeight="900" fontFamily="sans-serif">N</text>
+      <text x={cx} y={cy + r * 0.92} textAnchor="middle" dominantBaseline="middle" fontSize={r * 0.22} fill="#ecf0f1" fontFamily="sans-serif" opacity="0.9">S</text>
+      <text x={cx + r * 0.92} y={cy + 0.3} textAnchor="middle" dominantBaseline="middle" fontSize={r * 0.2} fill="#8fb08a" fontFamily="sans-serif">E</text>
+      <text x={cx - r * 0.92} y={cy + 0.3} textAnchor="middle" dominantBaseline="middle" fontSize={r * 0.2} fill="#8fb08a" fontFamily="sans-serif">W</text>
+    </g>
+  );
+}
+
+// ── main component ────────────────────────────────────────────
 export function FloorPlan2D({ result }: FloorPlan2DProps) {
   const [activeFloor, setActiveFloor] = React.useState(0);
-  const [hovered, setHovered] = React.useState<number | null>(null);
-
   const floors = useMemo(() => Math.max(1, ...result.rooms.map(r => r.floor + 1)), [result.rooms]);
-  const roomsOnFloor = useMemo(() => result.rooms.filter(r => r.floor === activeFloor), [result.rooms, activeFloor]);
+  const roomsOnFloor = useMemo(() => result.rooms.filter(r => r.floor === activeFloor) as Room[], [result.rooms, activeFloor]);
 
-  // SVG coordinate system: 1 plot-unit = scale px
-  const PAD = 14;
   const vw = result.plotWidth + PAD * 2;
   const vh = result.plotLength + PAD * 2;
-
-  const facing = (result as any).facing ?? "North";
-  const facingColors: Record<string, string> = {
-    North: "#3B82F6", South: "#EF4444", East: "#F59E0B", West: "#10B981",
-    "North-East": "#8B5CF6", "North-West": "#06B6D4", "South-East": "#F97316", "South-West": "#EC4899",
-  };
-  const fColor = facingColors[facing] ?? "#374151";
+  const compassR = 5.5;
+  const cX = vw - compassR - 2, cY = compassR + 2;
 
   return (
     <div className="flex flex-col gap-3 w-full">
-      {/* Floor tabs */}
       {floors > 1 && (
         <div className="flex gap-2">
           {Array.from({ length: floors }).map((_, i) => (
             <button key={i} onClick={() => setActiveFloor(i)}
               className={`px-4 py-1.5 text-sm font-semibold rounded-full transition-all ${
-                activeFloor === i ? "bg-orange-500 text-white shadow" : "bg-gray-100 text-gray-600 hover:bg-orange-50"
-              }`}>
+                activeFloor === i ? "text-white shadow" : "text-amber-100 opacity-60 hover:opacity-90"
+              }`}
+              style={{ background: activeFloor === i ? "#a76a53" : "#2c3327", border: "1px solid #a76a53" }}>
               {i === 0 ? "Ground Floor" : `Floor ${i}`}
             </button>
           ))}
         </div>
       )}
 
-      {/* SVG Plan */}
-      <div className="w-full rounded-xl overflow-hidden border border-gray-200 shadow-md bg-slate-50">
-        <svg
-          viewBox={`0 0 ${vw} ${vh}`}
-          className="w-full"
-          style={{ display: "block" }}
-          preserveAspectRatio="xMidYMid meet"
-        >
+      <div className="w-full rounded-xl overflow-hidden shadow-2xl" style={{ background: BG }}>
+        <svg viewBox={`0 0 ${vw} ${vh}`} className="w-full" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
           <defs>
-            {/* Clip all rooms to plot area */}
-            <clipPath id="plot-clip">
-              <rect x={PAD} y={PAD} width={result.plotWidth} height={result.plotLength} />
+            <clipPath id="plot-clip-2d">
+              <rect x={PAD} y={PAD} width={result.plotWidth} height={result.plotLength}/>
             </clipPath>
-
-            {/* Grid background */}
-            <pattern id="grid-bg" patternUnits="userSpaceOnUse" width="5" height="5">
-              <path d="M 5 0 L 0 0 0 5" fill="none" stroke="rgba(99,102,241,0.08)" strokeWidth="0.4"/>
-            </pattern>
-
-            {/* Parking hatch */}
-            <pattern id="hatch-parking" patternUnits="userSpaceOnUse" width="3" height="3">
-              <line x1="0" y1="3" x2="3" y2="0" stroke="#607D8B" strokeWidth="0.5" strokeOpacity="0.4"/>
-            </pattern>
-
-            {/* Garden dots */}
-            <pattern id="dots-garden" patternUnits="userSpaceOnUse" width="3" height="3">
-              <circle cx="1.5" cy="1.5" r="0.5" fill="#4CAF50" fillOpacity="0.4"/>
-            </pattern>
-
-            {/* Room gradients */}
-            {roomsOnFloor.map((room, i) => {
-              const c = room.color || getRoomColor(room.name);
-              return (
-                <linearGradient key={i} id={`rg-${i}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor={c} stopOpacity="1" />
-                  <stop offset="100%" stopColor={darken(c, 0.18)} stopOpacity="1" />
-                </linearGradient>
-              );
-            })}
-
-            {/* Shadow */}
-            <filter id="fshadow">
-              <feDropShadow dx="1" dy="1.5" stdDeviation="1.2" floodOpacity="0.15"/>
+            <filter id="drop-shadow-2d">
+              <feDropShadow dx="0" dy="1" stdDeviation="0.8" floodColor="#000" floodOpacity="0.35"/>
             </filter>
           </defs>
 
           {/* Background */}
-          <rect width={vw} height={vh} fill="url(#grid-bg)" />
+          <rect width={vw} height={vh} fill={BG}/>
 
-          {/* Plot outer shadow */}
-          <rect x={PAD+1} y={PAD+1.5} width={result.plotWidth} height={result.plotLength}
-            fill="rgba(0,0,0,0.06)" rx="1" />
+          {/* Plot fill */}
+          <rect x={PAD} y={PAD} width={result.plotWidth} height={result.plotLength} fill="#3a4535"/>
 
-          {/* Plot area (white base) */}
-          <rect x={PAD} y={PAD} width={result.plotWidth} height={result.plotLength}
-            fill="white" stroke="#1e293b" strokeWidth="1.2" rx="0.5" />
-
-          {/* Dimension arrows */}
-          {/* Width (top) */}
-          <g>
-            <line x1={PAD} y1={PAD - 4} x2={PAD + result.plotWidth} y2={PAD - 4} stroke="#94a3b8" strokeWidth="0.5" markerEnd="url(#arr)" markerStart="url(#arr)"/>
-            <text x={PAD + result.plotWidth / 2} y={PAD - 5.5} textAnchor="middle" fontSize="3.8" fill="#64748b" fontFamily="sans-serif" fontWeight="700">{result.plotWidth} ft</text>
-          </g>
-          {/* Length (left) */}
-          <text x={PAD - 5} y={PAD + result.plotLength / 2} textAnchor="middle" fontSize="3.8" fill="#64748b" fontFamily="sans-serif" fontWeight="700"
-            transform={`rotate(-90, ${PAD - 5}, ${PAD + result.plotLength / 2})`}>{result.plotLength} ft</text>
-
-          {/* ── ROOMS (clipped to plot boundary) ── */}
-          <g clipPath="url(#plot-clip)">
+          {/* Rooms with wall thickness */}
+          <g clipPath="url(#plot-clip-2d)">
             {roomsOnFloor.map((room, i) => {
-              const rx = room.x + PAD;
-              const ry = room.y + PAD;
-              const rw = room.width;
-              const rl = room.length;
-              const sqft = rw * rl;
-              const lower = room.name.toLowerCase();
-              const isParking = lower.includes("parking") || lower.includes("garage");
-              const isGarden = lower.includes("garden") || lower.includes("lawn") || lower.includes("courtyard");
-              const isStair = lower.includes("stair");
-              const icon = getRoomIcon(room.name);
-              const baseColor = room.color || getRoomColor(room.name);
-              const borderColor = darken(baseColor, 0.4);
-              const fs = Math.max(2, Math.min(rw, rl) * 0.14);
-              const iconFs = Math.max(2.5, Math.min(rw, rl) * 0.22);
-              const isHov = hovered === i;
+              const n = room.name.toLowerCase();
+              const isGarden = n.includes("garden") || n.includes("lawn") || n.includes("courtyard");
+              const isPark = n.includes("parking") || n.includes("garage");
+              const isPooja = n.includes("pooja") || n.includes("mandir");
+              const isUtil = n.includes("utility") || n.includes("store");
+              const fill = isGarden ? "#3d5c2e" : isPark ? "#444c38" : isPooja ? "#5c4a2e" : isUtil ? "#3d3d35" : ROOM_FILL;
 
               return (
-                <g key={i}
-                  onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
-                  style={{ cursor: "pointer" }}
-                  filter={isHov ? "url(#fshadow)" : undefined}
-                >
-                  {/* Fill */}
-                  <rect x={rx} y={ry} width={rw} height={rl} fill={`url(#rg-${i})`} />
-                  {/* Texture overlay */}
-                  {isParking && <rect x={rx} y={ry} width={rw} height={rl} fill="url(#hatch-parking)" />}
-                  {isGarden && <rect x={rx} y={ry} width={rw} height={rl} fill="url(#dots-garden)" />}
-                  {/* Staircase diagonal lines */}
-                  {isStair && Array.from({ length: Math.ceil(rl / 2) }).map((_, si) => (
-                    <line key={si} x1={rx} y1={ry + si * 2 + 1} x2={rx + rw} y2={ry + si * 2 + 1}
-                      stroke="#78716c" strokeWidth="0.4" strokeOpacity="0.6"/>
-                  ))}
-
-                  {/* Border — thicker on hover */}
-                  <rect x={rx} y={ry} width={rw} height={rl} fill="none"
-                    stroke={isHov ? "#1e293b" : borderColor} strokeWidth={isHov ? "0.9" : "0.5"} />
-
-                  {/* Wall accent lines (top + left) */}
-                  <line x1={rx} y1={ry} x2={rx + rw} y2={ry} stroke={borderColor} strokeWidth="1.0" />
-                  <line x1={rx} y1={ry} x2={rx} y2={ry + rl} stroke={borderColor} strokeWidth="1.0" />
-
-                  {/* Icon */}
-                  {!isStair && icon && rw > 5 && rl > 5 && (
-                    <text x={rx + rw / 2} y={ry + rl / 2 - fs * 1.0}
-                      textAnchor="middle" dominantBaseline="middle" fontSize={iconFs}>{icon}</text>
-                  )}
-
-                  {/* Room name */}
-                  <text x={rx + rw / 2}
-                    y={ry + rl / 2 + (icon && rw > 5 && rl > 5 ? iconFs * 0.55 : 0)}
-                    textAnchor="middle" dominantBaseline="middle"
-                    fill="#1e293b" fontSize={fs} fontWeight="700" fontFamily="sans-serif">
-                    {room.name}
-                  </text>
-
-                  {/* Dimensions */}
-                  {rw > 7 && rl > 5 && (
-                    <text x={rx + rw / 2}
-                      y={ry + rl / 2 + (icon && rw > 5 && rl > 5 ? iconFs * 0.55 : 0) + fs * 1.5}
-                      textAnchor="middle" dominantBaseline="middle"
-                      fill="#374151" fontSize={fs * 0.75} fontFamily="sans-serif" opacity="0.8">
-                      {rw}×{rl} · {sqft} sqft
-                    </text>
-                  )}
+                <g key={i}>
+                  {/* Outer wall (terracotta) */}
+                  <rect
+                    x={room.x + PAD} y={room.y + PAD}
+                    width={room.width} height={room.length}
+                    fill={WALL_CLR} />
+                  {/* Inner room fill (inset by wall thickness) */}
+                  <rect
+                    x={room.x + PAD + WALL_T} y={room.y + PAD + WALL_T}
+                    width={room.width - WALL_T * 2} height={room.length - WALL_T * 2}
+                    fill={fill}/>
                 </g>
               );
             })}
           </g>
 
-          {/* ── OUTER WALL BORDER (drawn on top of rooms) ── */}
+          {/* Windows & Doors & Furniture — clipped */}
+          <g clipPath="url(#plot-clip-2d)" transform={`translate(${PAD}, ${PAD})`}>
+            {roomsOnFloor.map((room, i) => (
+              <g key={i}>
+                <WindowSymbol room={room}/>
+                <DoorArc room={room} allRooms={roomsOnFloor}/>
+                {getRoomFurniture(room)}
+                {/* Room label */}
+                <text
+                  x={room.x + room.width / 2} y={room.y + room.length / 2}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={Math.max(1.8, Math.min(room.width, room.length) * 0.13)}
+                  fill="#3a2e28" fontWeight="700" fontFamily="sans-serif">
+                  {room.name}
+                </text>
+                {room.width > 6 && room.length > 5 && (
+                  <text
+                    x={room.x + room.width / 2}
+                    y={room.y + room.length / 2 + Math.max(1.8, Math.min(room.width, room.length) * 0.13) * 1.5}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize={Math.max(1.4, Math.min(room.width, room.length) * 0.09)}
+                    fill="#6b5a50" fontFamily="sans-serif">
+                    {room.width}×{room.length} ft
+                  </text>
+                )}
+              </g>
+            ))}
+          </g>
+
+          {/* Plot outer border (thick terracotta) */}
           <rect x={PAD} y={PAD} width={result.plotWidth} height={result.plotLength}
-            fill="none" stroke="#1e293b" strokeWidth="1.5" rx="0.5" />
+            fill="none" stroke={WALL_CLR} strokeWidth="1.8"/>
 
-          {/* Facing badge pill (bottom-left, inside plot) */}
-          <g transform={`translate(${PAD + 2}, ${PAD + result.plotLength - 7})`}>
-            <rect x="0" y="0" width={facing.length * 2.2 + 10} height="6" rx="3" fill={fColor} />
-            <text x={(facing.length * 2.2 + 10) / 2} y="3" textAnchor="middle" dominantBaseline="middle"
-              fontSize="2.8" fill="white" fontFamily="sans-serif" fontWeight="700">
-              {facing} Facing
-            </text>
-          </g>
+          {/* Dimension lines */}
+          <DimLine
+            x1={PAD} y1={PAD - 7} x2={PAD + result.plotWidth} y2={PAD - 7}
+            label={`${result.plotWidth} ft`}/>
+          <DimLine
+            x1={PAD - 7} y1={PAD} x2={PAD - 7} y2={PAD + result.plotLength}
+            label={`${result.plotLength} ft`}/>
 
-          {/* Compass rose (top-right, inside plot) */}
-          <g transform={`translate(${PAD + result.plotWidth - 9}, ${PAD + 9})`}>
-            <circle cx="0" cy="0" r="7" fill="white" fillOpacity="0.92" stroke="#e2e8f0" strokeWidth="0.6"/>
-            {/* N pointer red */}
-            <polygon points="0,-5.5 1.2,0.5 0,-1.5 -1.2,0.5" fill="#ef4444"/>
-            {/* S pointer gray */}
-            <polygon points="0,5.5 1.2,-0.5 0,1.5 -1.2,-0.5" fill="#94a3b8"/>
-            {/* Cardinal labels */}
-            <text x="0" y="-6.5" textAnchor="middle" dominantBaseline="middle" fontSize="2" fill="#ef4444" fontWeight="800" fontFamily="sans-serif">N</text>
-            <text x="0" y="7.2" textAnchor="middle" dominantBaseline="middle" fontSize="2" fill="#94a3b8" fontWeight="700" fontFamily="sans-serif">S</text>
-            <text x="7.2" y="0" textAnchor="middle" dominantBaseline="middle" fontSize="2" fill="#64748b" fontWeight="700" fontFamily="sans-serif">E</text>
-            <text x="-7.2" y="0" textAnchor="middle" dominantBaseline="middle" fontSize="2" fill="#64748b" fontWeight="700" fontFamily="sans-serif">W</text>
-          </g>
+          {/* Compass */}
+          <Compass cx={cX} cy={cY} r={compassR}/>
+
+          {/* Facing label */}
+          <text x={PAD + result.plotWidth / 2} y={PAD + result.plotLength + 5}
+            textAnchor="middle" fontSize="3" fill="#8fb08a" fontFamily="sans-serif" fontWeight="600">
+            {(result as any).facing ?? "North"} Facing
+          </text>
         </svg>
       </div>
 
-      {/* Legend chips */}
-      <div className="flex flex-wrap gap-1.5">
-        {roomsOnFloor.map((room, i) => {
-          const c = room.color || getRoomColor(room.name);
-          const icon = getRoomIcon(room.name);
-          return (
-            <div key={i}
-              onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold cursor-pointer transition-all border ${hovered === i ? "scale-105 shadow" : ""}`}
-              style={{ backgroundColor: c + "30", borderColor: c, color: darken(c, 0.5) }}>
-              {icon && <span>{icon}</span>}
-              <span>{room.name}</span>
-              <span className="opacity-60">{room.width * room.length}sqft</span>
-            </div>
-          );
-        })}
+      {/* Legend */}
+      <div className="flex flex-wrap gap-1.5 px-1">
+        {roomsOnFloor.map((room, i) => (
+          <div key={i} className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold"
+            style={{ background: "#2c332790", border: "1px solid #a76a53", color: "#e8ddd0" }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: ROOM_FILL, display: "inline-block" }}/>
+            {room.name} · {room.width * room.length} sqft
+          </div>
+        ))}
       </div>
     </div>
   );
