@@ -73,7 +73,7 @@ Return ONLY a raw JSON object (no markdown, no \`\`\`json, no explanation):
 }`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent(prompt);
     const content = result.response.text();
 
