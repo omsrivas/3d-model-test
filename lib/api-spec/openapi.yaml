@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: House Floor Plan Generator API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: floorplan
+    description: Floor plan generation operations
 paths:
   /healthz:
     get:
@@ -24,6 +25,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /floorplan/generate:
+    post:
+      operationId: generateFloorPlan
+      tags: [floorplan]
+      summary: Generate a floor plan from plot dimensions and requirements
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FloorPlanInput"
+      responses:
+        "200":
+          description: Generated floor plan layout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FloorPlanResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Generation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +67,111 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    FloorPlanInput:
+      type: object
+      required:
+        - plotWidth
+        - plotLength
+        - floors
+        - facing
+        - bedrooms
+        - bathrooms
+      properties:
+        plotWidth:
+          type: number
+          description: Plot width in feet
+        plotLength:
+          type: number
+          description: Plot length in feet
+        floors:
+          type: integer
+          minimum: 1
+          maximum: 4
+          description: Number of floors
+        facing:
+          type: string
+          enum: [North, South, East, West]
+          description: Plot facing direction
+        bedrooms:
+          type: integer
+          minimum: 1
+          maximum: 10
+        bathrooms:
+          type: integer
+          minimum: 1
+          maximum: 10
+        hasParking:
+          type: boolean
+        hasGarden:
+          type: boolean
+        hasPooja:
+          type: boolean
+        hasStudyRoom:
+          type: boolean
+        vastuCompliant:
+          type: boolean
+        additionalNotes:
+          type: ["string", "null"]
+
+    Room:
+      type: object
+      required:
+        - name
+        - x
+        - y
+        - width
+        - length
+        - floor
+      properties:
+        name:
+          type: string
+        x:
+          type: number
+          description: X position in feet from origin
+        y:
+          type: number
+          description: Y position in feet from origin
+        width:
+          type: number
+          description: Room width in feet
+        length:
+          type: number
+          description: Room length in feet
+        floor:
+          type: integer
+          description: Floor number (0 = ground, 1 = first, etc.)
+        color:
+          type: ["string", "null"]
+
+    FloorPlanResult:
+      type: object
+      required:
+        - rooms
+        - plotWidth
+        - plotLength
+        - floors
+        - description
+      properties:
+        rooms:
+          type: array
+          items:
+            $ref: "#/components/schemas/Room"
+        plotWidth:
+          type: number
+        plotLength:
+          type: number
+        floors:
+          type: integer
+        description:
+          type: string
+          description: AI-generated description of the floor plan
+        vastuNotes:
+          type: ["string", "null"]
