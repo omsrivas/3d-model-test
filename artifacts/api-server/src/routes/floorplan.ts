@@ -7,20 +7,39 @@ const router = Router();
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "" });
 
 const ROOM_COLORS: Record<string, string> = {
-  "living room": "#E8D5B7",
-  "master bedroom": "#B7C5E8",
-  "bedroom": "#C5E8B7",
-  "bathroom": "#E8B7C5",
-  "kitchen": "#E8E0B7",
-  "dining room": "#D4B7E8",
-  "pooja room": "#FFE4B5",
-  "study room": "#B7E8E0",
-  "parking": "#D0D0D0",
-  "garden": "#90EE90",
-  "staircase": "#C8C8C8",
-  "balcony": "#DDA0DD",
-  "lobby": "#F5DEB3",
-  "utility": "#D2B48C",
+  "living room": "#FF6B6B",
+  "drawing room": "#FF6B6B",
+  "hall": "#FF6B6B",
+  "master bedroom": "#4ECDC4",
+  "bedroom 1": "#4ECDC4",
+  "bedroom": "#45B7D1",
+  "bathroom": "#96CEB4",
+  "toilet": "#96CEB4",
+  "washroom": "#96CEB4",
+  "kitchen": "#FFEAA7",
+  "dining room": "#DDA0DD",
+  "dining": "#DDA0DD",
+  "pooja room": "#FFB347",
+  "pooja": "#FFB347",
+  "mandir": "#FFB347",
+  "study room": "#B39DDB",
+  "study": "#B39DDB",
+  "office": "#B39DDB",
+  "parking": "#90A4AE",
+  "garage": "#90A4AE",
+  "garden": "#81C784",
+  "lawn": "#81C784",
+  "courtyard": "#A5D6A7",
+  "staircase": "#BCAAA4",
+  "stairs": "#BCAAA4",
+  "balcony": "#F48FB1",
+  "lobby": "#FFD54F",
+  "foyer": "#FFD54F",
+  "passage": "#CE93D8",
+  "corridor": "#CE93D8",
+  "utility": "#80CBC4",
+  "store": "#A1887F",
+  "servant": "#EF9A9A",
 };
 
 function getRoomColor(roomName: string): string {
@@ -28,7 +47,21 @@ function getRoomColor(roomName: string): string {
   for (const [key, color] of Object.entries(ROOM_COLORS)) {
     if (lower.includes(key)) return color;
   }
-  return "#E0E0E0";
+  const hues = ["#FF8A80","#82B1FF","#CCFF90","#FFD180","#EA80FC","#80D8FF","#FFFF8D","#B9F6CA"];
+  let hash = 0;
+  for (const c of lower) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return hues[Math.abs(hash) % hues.length];
+}
+
+// Post-process: clamp rooms to plot boundaries
+function clampRooms(rooms: any[], plotWidth: number, plotLength: number) {
+  return rooms.map(r => {
+    const x = Math.max(1, Math.min(r.x, plotWidth - 2));
+    const y = Math.max(1, Math.min(r.y, plotLength - 2));
+    const width = Math.max(3, Math.min(r.width, plotWidth - 1 - x));
+    const length = Math.max(3, Math.min(r.length, plotLength - 1 - y));
+    return { ...r, x, y, width, length };
+  });
 }
 
 router.post("/floorplan/generate", async (req, res) => {
@@ -42,52 +75,71 @@ router.post("/floorplan/generate", async (req, res) => {
   const usableW = input.plotWidth - 2;
   const usableL = input.plotLength - 2;
   const totalArea = usableW * usableL;
+  const minArea = Math.round(totalArea * 0.92);
 
-  const prompt = `You are an expert Indian architect. Generate an OPTIMIZED floor plan that uses MAXIMUM available plot area.
+  // Build Vastu guidance
+  const vastuRules = input.vastuCompliant ? `
+VASTU RULES (strictly follow):
+- Kitchen: South-East zone (right-bottom area of plot)
+- Master Bedroom: South-West zone (left-bottom or right-bottom)
+- Pooja Room: North-East zone (x near 1, y near 1)
+- Living Room: North or East facing zone
+- Bathrooms: avoid North-East corner; best in South or West
+- Balcony/Garden: North or East side
+- Study Room: West or South-West zone` : "";
 
-Plot Size: ${input.plotWidth} x ${input.plotLength} feet (usable area: ${usableW} x ${usableL} = ${totalArea} sq ft)
-Floors: ${input.floors}
-Plot Facing: ${input.facing}
-Bedrooms: ${input.bedrooms}
-Bathrooms: ${input.bathrooms}
-Parking: ${input.hasParking ? "Yes" : "No"}
-Garden: ${input.hasGarden ? "Yes" : "No"}
-Pooja Room: ${input.hasPooja ? "Yes" : "No"}
-Study Room: ${input.hasStudyRoom ? "Yes" : "No"}
-Vastu Compliant: ${input.vastuCompliant ? "Yes" : "No"}
-${input.additionalNotes ? `Notes: ${input.additionalNotes}` : ""}
+  // Smart layout examples based on plot size
+  const row1L = Math.round(usableL * 0.38);
+  const row2L = Math.round(usableL * 0.32);
+  const row3L = usableL - row1L - row2L;
+  const col1W = Math.round(usableW * 0.45);
+  const col2W = Math.round(usableW * 0.35);
+  const col3W = usableW - col1W - col2W;
 
-CRITICAL SPACE RULES — YOU MUST FOLLOW ALL:
-1. ALL rooms together MUST cover at least 90% of the usable area (${Math.round(totalArea * 0.9)} sq ft minimum)
-2. Rooms must tile like a grid — NO empty gaps between rooms
-3. x must start at 1, y must start at 1
-4. Every room: x+width <= ${input.plotWidth - 1}, y+length <= ${input.plotLength - 1}
-5. Rooms must NOT overlap — verify each pair
-6. All values must be integers
-7. Rows of rooms must align: rooms in the same row share the same y and same length
-8. Each floor must independently cover the full plot area
-9. Include staircase on every floor if floors > 1
+  const prompt = `You are a CREATIVE senior Indian architect with 30 years of experience. Design a UNIQUE, INTELLIGENT floor plan — NOT a boring cookie-cutter layout.
 
-LAYOUT STRATEGY:
-- Divide the plot into horizontal bands (rows), each row spanning full width ${usableW}
-- Within each row, split width among rooms (widths must sum to exactly ${usableW})
-- Typical band heights: 10-14 feet per row, stacked until total = ${usableL}
+Plot: ${input.plotWidth}×${input.plotLength} ft (usable: ${usableW}×${usableL} = ${totalArea} sq ft)
+Facing: ${input.facing} | Floors: ${input.floors}
+Rooms needed: ${input.bedrooms} Bedrooms, ${input.bathrooms} Bathrooms${input.hasParking ? ", Parking" : ""}${input.hasGarden ? ", Garden" : ""}${input.hasPooja ? ", Pooja Room" : ""}${input.hasStudyRoom ? ", Study Room" : ""}
+${input.additionalNotes ? `Special requirements: ${input.additionalNotes}` : ""}
+${vastuRules}
 
-Return ONLY a raw JSON object (no markdown, no \`\`\`json, no explanation):
+DESIGN PRINCIPLES (make it feel like a real architect designed it):
+1. Vary room proportions intelligently — living room should feel spacious (wide), bedrooms balanced, bathrooms compact
+2. Create visual interest: use 3 columns of varying widths, not just 2
+3. Group related rooms: kitchen+dining together, bedrooms+bathrooms together
+4. Avoid identical room sizes — each room should have a distinct character
+5. Balcony/garden near living room or main bedroom; NOT tucked in a corner
+6. Passage/lobby near entrance as a transitional space
+7. Think about privacy: bedrooms in quieter back zone, social spaces in front
+
+COVERAGE RULES (MANDATORY — DO NOT SKIP):
+- Total room area sum MUST be ≥ ${minArea} sq ft (92% of ${totalArea})
+- Plot grid: x from 1 to ${input.plotWidth - 1}, y from 1 to ${input.plotLength - 1}
+- NO room may exceed these boundaries: x+width ≤ ${input.plotWidth - 1}, y+length ≤ ${input.plotLength - 1}
+- NO two rooms may overlap — check every pair
+- All values must be integers
+- Arrange rooms in rows; each row's rooms must share same y and same length; widths in a row must sum to ${usableW}
+
+EXAMPLE STRUCTURE for ${input.plotWidth}×${input.plotLength} (adapt sizes, don't copy exactly):
+Row 1 (y=1, length=${row1L}): col1 w=${col1W} | col2 w=${col2W} | col3 w=${col3W}
+Row 2 (y=${1 + row1L}, length=${row2L}): different split e.g. ${Math.round(usableW * 0.6)} | ${usableW - Math.round(usableW * 0.6)}
+Row 3 (y=${1 + row1L + row2L}, length=${row3L}): another creative split
+
+Return ONLY valid raw JSON, no markdown, no explanation:
 {
   "rooms": [
-    { "name": "Living Room", "x": 1, "y": 1, "width": ${Math.round(usableW * 0.55)}, "length": ${Math.round(usableL * 0.35)}, "floor": 0 },
-    { "name": "Kitchen", "x": ${1 + Math.round(usableW * 0.55)}, "y": 1, "width": ${usableW - Math.round(usableW * 0.55)}, "length": ${Math.round(usableL * 0.35)}, "floor": 0 }
+    {"name":"<room name>","x":<int>,"y":<int>,"width":<int>,"length":<int>,"floor":<int>}
   ],
-  "description": "Brief professional description",
-  "vastuNotes": "Vastu notes or null"
+  "description": "<2-3 sentence professional description highlighting unique features>",
+  "vastuNotes": "<vastu compliance notes or null>"
 }`;
 
   try {
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
+      temperature: 0.65,
     });
 
     const content = completion.choices[0]?.message?.content ?? "";
@@ -104,7 +156,9 @@ Return ONLY a raw JSON object (no markdown, no \`\`\`json, no explanation):
       parsedResult = JSON.parse(jsonMatch[0]);
     }
 
-    const rooms = (parsedResult.rooms || []).map((room: any) => ({
+    const rawRooms = clampRooms(parsedResult.rooms || [], input.plotWidth, input.plotLength);
+
+    const rooms = rawRooms.map((room: any) => ({
       name: String(room.name),
       x: Number(room.x),
       y: Number(room.y),
@@ -119,6 +173,7 @@ Return ONLY a raw JSON object (no markdown, no \`\`\`json, no explanation):
       plotWidth: input.plotWidth,
       plotLength: input.plotLength,
       floors: input.floors,
+      facing: input.facing,
       description: parsedResult.description || "Floor plan generated successfully.",
       vastuNotes: parsedResult.vastuNotes || null,
     });
