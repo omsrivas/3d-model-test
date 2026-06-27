@@ -29,3 +29,30 @@ to = "/index.html"
 [services.env]
 PORT = "19914"
 BASE_PATH = "/"
+
+[[services]]
+name = "api"
+paths = [ "/api" ]
+localPort = 8080
+
+[services.development]
+run = "PORT=8080 pnpm --filter @workspace/api-server run dev"
+
+[services.production.build]
+args = [ "pnpm", "--filter", "@workspace/api-server", "run", "build" ]
+
+[services.production.build.env]
+NODE_ENV = "production"
+
+[services.production.run]
+args = [ "node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs" ]
+
+[services.production.run.env]
+PORT = "8080"
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/api/healthz"
+
+[services.env]
+PORT = "8080"
