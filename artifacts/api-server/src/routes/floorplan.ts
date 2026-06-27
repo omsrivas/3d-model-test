@@ -3,63 +3,14 @@ import Groq from "groq-sdk";
 import { GenerateFloorPlanBody } from "@workspace/api-zod";
 
 const router = Router();
-
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "" });
 
-const ROOM_COLORS: Record<string, string> = {
-  "living room": "#FF6B6B",
-  "drawing room": "#FF6B6B",
-  "hall": "#FF6B6B",
-  "master bedroom": "#4ECDC4",
-  "bedroom 1": "#4ECDC4",
-  "bedroom": "#45B7D1",
-  "bathroom": "#96CEB4",
-  "toilet": "#96CEB4",
-  "washroom": "#96CEB4",
-  "kitchen": "#FFEAA7",
-  "dining room": "#DDA0DD",
-  "dining": "#DDA0DD",
-  "pooja room": "#FFB347",
-  "pooja": "#FFB347",
-  "mandir": "#FFB347",
-  "study room": "#B39DDB",
-  "study": "#B39DDB",
-  "office": "#B39DDB",
-  "parking": "#90A4AE",
-  "garage": "#90A4AE",
-  "garden": "#81C784",
-  "lawn": "#81C784",
-  "courtyard": "#A5D6A7",
-  "staircase": "#BCAAA4",
-  "stairs": "#BCAAA4",
-  "balcony": "#F48FB1",
-  "lobby": "#FFD54F",
-  "foyer": "#FFD54F",
-  "passage": "#CE93D8",
-  "corridor": "#CE93D8",
-  "utility": "#80CBC4",
-  "store": "#A1887F",
-  "servant": "#EF9A9A",
-};
-
-function getRoomColor(roomName: string): string {
-  const lower = roomName.toLowerCase();
-  for (const [key, color] of Object.entries(ROOM_COLORS)) {
-    if (lower.includes(key)) return color;
-  }
-  const hues = ["#FF8A80","#82B1FF","#CCFF90","#FFD180","#EA80FC","#80D8FF","#FFFF8D","#B9F6CA"];
-  let hash = 0;
-  for (const c of lower) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
-  return hues[Math.abs(hash) % hues.length];
-}
-
-// Post-process: clamp rooms to plot boundaries
 function clampRooms(rooms: any[], plotWidth: number, plotLength: number) {
   return rooms.map(r => {
-    const x = Math.max(1, Math.min(r.x, plotWidth - 2));
-    const y = Math.max(1, Math.min(r.y, plotLength - 2));
-    const width = Math.max(3, Math.min(r.width, plotWidth - 1 - x));
-    const length = Math.max(3, Math.min(r.length, plotLength - 1 - y));
+    const x = Math.max(1, Math.min(r.x, plotWidth - 4));
+    const y = Math.max(1, Math.min(r.y, plotLength - 4));
+    const width = Math.max(4, Math.min(r.width, plotWidth - 1 - x));
+    const length = Math.max(4, Math.min(r.length, plotLength - 1 - y));
     return { ...r, x, y, width, length };
   });
 }
@@ -71,75 +22,90 @@ router.post("/floorplan/generate", async (req, res) => {
   }
 
   const input = parsed.data;
-
   const usableW = input.plotWidth - 2;
   const usableL = input.plotLength - 2;
   const totalArea = usableW * usableL;
-  const minArea = Math.round(totalArea * 0.92);
 
-  // Build Vastu guidance
-  const vastuRules = input.vastuCompliant ? `
-VASTU RULES (strictly follow):
-- Kitchen: South-East zone (right-bottom area of plot)
-- Master Bedroom: South-West zone (left-bottom or right-bottom)
-- Pooja Room: North-East zone (x near 1, y near 1)
-- Living Room: North or East facing zone
-- Bathrooms: avoid North-East corner; best in South or West
-- Balcony/Garden: North or East side
-- Study Room: West or South-West zone` : "";
+  const vastuZones = input.vastuCompliant ? `
+VASTU PLACEMENT RULES (mandatory):
+- Pooja/Mandir: North-East corner (x near 1, y near 1)
+- Kitchen: South-East zone (x high, y high) — fire element
+- Master Bedroom: South-West corner (large room, x high, y high)
+- Drawing Room / Living: North or North-East zone (near entrance)
+- Bathrooms: South or West zones, never North-East
+- Staircase if any: South, West, or South-West
+- Garden/Lawn: North or East side
+- Study Room: West or North-West
+- Garage/Parking: South-East or North-West` : "";
 
-  // Smart layout examples based on plot size
-  const row1L = Math.round(usableL * 0.38);
-  const row2L = Math.round(usableL * 0.32);
-  const row3L = usableL - row1L - row2L;
-  const col1W = Math.round(usableW * 0.45);
-  const col2W = Math.round(usableW * 0.35);
-  const col3W = usableW - col1W - col2W;
+  const facingDesc =
+    input.facing === "North" ? "Main entrance (GATE) is on the NORTH side — rooms at y=1 face the street" :
+    input.facing === "South" ? "Main entrance (GATE) is on the SOUTH side — rooms at y high face the street" :
+    input.facing === "East"  ? "Main entrance (GATE) is on the EAST side — rooms at x high face the street" :
+    "Main entrance (GATE) is on the WEST side — rooms at x=1 face the street";
 
-  const prompt = `You are a CREATIVE senior Indian architect with 30 years of experience. Design a UNIQUE, INTELLIGENT floor plan — NOT a boring cookie-cutter layout.
+  // compute example row heights for guidance
+  const r1L = Math.round(usableL * 0.28);
+  const r2L = Math.round(usableL * 0.35);
+  const r3L = Math.round(usableL * 0.22);
+  const r4L = usableL - r1L - r2L - r3L;
 
-Plot: ${input.plotWidth}×${input.plotLength} ft (usable: ${usableW}×${usableL} = ${totalArea} sq ft)
-Facing: ${input.facing} | Floors: ${input.floors}
-Rooms needed: ${input.bedrooms} Bedrooms, ${input.bathrooms} Bathrooms${input.hasParking ? ", Parking" : ""}${input.hasGarden ? ", Garden" : ""}${input.hasPooja ? ", Pooja Room" : ""}${input.hasStudyRoom ? ", Study Room" : ""}
-${input.additionalNotes ? `Special requirements: ${input.additionalNotes}` : ""}
-${vastuRules}
+  const prompt = `You are a highly experienced Indian residential architect. Design a COMPLETE, PROFESSIONAL floor plan for the following plot. The result should look like a real architectural drawing with proper room proportions, good flow, and Vastu compliance.
 
-DESIGN PRINCIPLES (make it feel like a real architect designed it):
-1. Vary room proportions intelligently — living room should feel spacious (wide), bedrooms balanced, bathrooms compact
-2. Create visual interest: use 3 columns of varying widths, not just 2
-3. Group related rooms: kitchen+dining together, bedrooms+bathrooms together
-4. Avoid identical room sizes — each room should have a distinct character
-5. Balcony/garden near living room or main bedroom; NOT tucked in a corner
-6. Passage/lobby near entrance as a transitional space
-7. Think about privacy: bedrooms in quieter back zone, social spaces in front
+PLOT: ${input.plotWidth} ft wide × ${input.plotLength} ft long (usable interior: ${usableW} × ${usableL} ft = ${totalArea} sq ft)
+FACING: ${facingDesc}
+FLOORS: ${input.floors}
+REQUIRED ROOMS: ${input.bedrooms} Bedrooms, ${input.bathrooms} Bathrooms/Attached Baths${input.hasParking ? ", Car Porch/Parking" : ""}${input.hasGarden ? ", Garden/Lawn" : ""}${input.hasPooja ? ", Pooja Room" : ""}${input.hasStudyRoom ? ", Study Room" : ""}
+${input.additionalNotes ? `SPECIAL NOTES: ${input.additionalNotes}` : ""}
+${vastuZones}
 
-COVERAGE RULES (MANDATORY — DO NOT SKIP):
-- Total room area sum MUST be ≥ ${minArea} sq ft (92% of ${totalArea})
-- Plot grid: x from 1 to ${input.plotWidth - 1}, y from 1 to ${input.plotLength - 1}
-- NO room may exceed these boundaries: x+width ≤ ${input.plotWidth - 1}, y+length ≤ ${input.plotLength - 1}
-- NO two rooms may overlap — check every pair
-- All values must be integers
-- Arrange rooms in rows; each row's rooms must share same y and same length; widths in a row must sum to ${usableW}
+LAYOUT RULES (FOLLOW STRICTLY):
+1. Every room MUST be a rectangle — provide x, y, width, length as integers (in feet)
+2. Coordinate system: x goes LEFT→RIGHT (0 to ${input.plotWidth}), y goes TOP→BOTTOM (0 to ${input.plotLength})
+3. ALL rooms must be WITHIN plot boundaries: x ≥ 1, y ≥ 1, x+width ≤ ${input.plotWidth - 1}, y+length ≤ ${input.plotLength - 1}
+4. NO two rooms may OVERLAP — verify every pair
+5. Rooms in each row MUST share the same y and same length value, and their widths must sum exactly to ${usableW}
+6. Total room area must cover ≥ 90% of ${totalArea} sq ft
+7. Bathroom/attached bath must be ADJACENT (shares x or y boundary) with its bedroom
+8. Include a Foyer/Entrance near the facing side
+9. Car Porch/Parking should be accessible from the gate side
 
-EXAMPLE STRUCTURE for ${input.plotWidth}×${input.plotLength} (adapt sizes, don't copy exactly):
-Row 1 (y=1, length=${row1L}): col1 w=${col1W} | col2 w=${col2W} | col3 w=${col3W}
-Row 2 (y=${1 + row1L}, length=${row2L}): different split e.g. ${Math.round(usableW * 0.6)} | ${usableW - Math.round(usableW * 0.6)}
-Row 3 (y=${1 + row1L + row2L}, length=${row3L}): another creative split
+TYPICAL ROOM SIZES (adapt to fit your design):
+- Master Bedroom: 14–16 ft wide × 13–15 ft long
+- Bedroom: 12–14 ft wide × 12–14 ft long
+- Attached Bath: 7–8 ft wide × 6–7 ft long
+- Family Lounge / Living: 18–22 ft wide × 15–18 ft long
+- Drawing Room: 14–16 ft wide × 12–14 ft long
+- Kitchen: 12–14 ft wide × 10–12 ft long
+- Dining: 10–12 ft wide × 10–12 ft long
+- Foyer: 6–8 ft wide × 7–9 ft long
+- Pooja Room: 5–7 ft wide × 6–8 ft long
+- Car Porch: 14–18 ft wide × 16–20 ft long
+- Garden/Lawn: remaining front/side space
 
-Return ONLY valid raw JSON, no markdown, no explanation:
+EXAMPLE STRUCTURE for ${input.plotWidth}×${input.plotLength} (adapt sizes creatively):
+Row 1 (y=1, length=${r1L}): Foyer + Bedroom + Drawing Room across ${usableW} ft
+Row 2 (y=${1 + r1L}, length=${r2L}): Family Lounge + Kitchen across ${usableW} ft
+Row 3 (y=${1 + r1L + r2L}, length=${r3L}): Bedrooms + Bathrooms across ${usableW} ft
+Row 4 (y=${1 + r1L + r2L + r3L}, length=${r4L}): Garden + Car Porch across ${usableW} ft
+
+Return ONLY valid raw JSON — NO markdown, NO explanation, NO code fences:
 {
   "rooms": [
-    {"name":"<room name>","x":<int>,"y":<int>,"width":<int>,"length":<int>,"floor":<int>}
+    {"name":"Foyer","x":1,"y":1,"width":8,"length":9,"floor":0},
+    {"name":"Bedroom 1","x":9,"y":1,"width":14,"length":13,"floor":0},
+    ...
   ],
-  "description": "<2-3 sentence professional description highlighting unique features>",
-  "vastuNotes": "<vastu compliance notes or null>"
+  "description": "3-sentence professional description of the design concept and key features",
+  "vastuNotes": "Vastu compliance summary or null if not applicable"
 }`;
 
   try {
     const completion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.65,
+      temperature: 0.55,
+      max_tokens: 3000,
     });
 
     const content = completion.choices[0]?.message?.content ?? "";
@@ -150,14 +116,11 @@ Return ONLY valid raw JSON, no markdown, no explanation:
       parsedResult = JSON.parse(cleaned);
     } catch {
       const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return res.status(500).json({ error: "Failed to parse AI response" });
-      }
+      if (!jsonMatch) return res.status(500).json({ error: "Failed to parse AI response" });
       parsedResult = JSON.parse(jsonMatch[0]);
     }
 
     const rawRooms = clampRooms(parsedResult.rooms || [], input.plotWidth, input.plotLength);
-
     const rooms = rawRooms.map((room: any) => ({
       name: String(room.name),
       x: Number(room.x),
@@ -165,7 +128,6 @@ Return ONLY valid raw JSON, no markdown, no explanation:
       width: Number(room.width),
       length: Number(room.length),
       floor: Number(room.floor ?? 0),
-      color: getRoomColor(String(room.name)),
     }));
 
     return res.json({
